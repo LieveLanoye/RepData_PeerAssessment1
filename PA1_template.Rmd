@@ -1,25 +1,140 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Coursera - Reproducible reasearch - Course Project 1"
+output:
+  html_document: default
+  pdf_document: default
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
 
 ## Loading and preprocessing the data
 
+The variables included in this dataset are:  
+  - steps: Number of steps taking in a 5-minute interval (missing values are coded as NA)    
+  - date: The date on which the measurement was taken in YYYY-MM-DD format     
+  - interval: Identifier for the 5-minute interval in which measurement was taken    
 
+First I load data from the csv file and I get some basic stats  
+
+```{r load}
+  activity <- read.csv("activity.csv")
+  summary(activity)
+  str(activity)
+```
+
+Findings :   
+- 2304 NA's are present  
+- Dates not stored as dates, but as factor. Y-m-d  
+
+**first exploration and cleaning dates**
+
+```{r prep_date}
+  class(activity$date)
+  activity$date <- as.Date(activity$date)
+  class(activity$date)
+```
+
+**exploration of interval**
+```{r}
+plot(activity$interval[1:2000], col = "green")
+```
+Findings :
+- intervals are reset to 0 each day
+
+```{r}
+plot(activity$interval[1:200], col = "green")
+```
+Findings : - intervals run illogically : the increase is taking hours into account as 5-10-15-...-50-55-100-105... 
+
+Remapping intervals to continuos stream of minutes : ...-50-55-100-105-... is mapped to ... -50-55-60-65-... Note, this remapping only can run once, when running this part of the script again, it needs to start with reloading the data!
+```{r prep_interval}
+par(mfrow = c(1,2))
+plot(activity$interval[1:200], main = "old mapping", col = "green")
+activity$interval <- (floor((activity$interval)/100)*60+activity$interval-floor((activity$interval)/100)*100)
+plot(activity$interval[1:200], main = "new mapping", col = "green")
+```
 
 ## What is mean total number of steps taken per day?
 
+I use aggregate as an easy way to calculate a metric for each value of "date".
+I do this for sum, mean and median.Median does not have default na.rm = TRUE!
 
+```{r mean_steps_day, echo=TRUE}
+sum_Steps_day <- aggregate(steps ~ date, activity, sum, na.rm = TRUE)
+
+#not able to find how to do this in plot, so using ggplot
+library(ggplot2)
+ggplot(data = sum_Steps_day, aes(steps)) + 
+  geom_histogram(bins = 10, col = "green") +
+  ggtitle("total steps per day") +
+  theme(panel.grid.major.x = element_blank(), panel.grid.minor.x = element_blank())
+
+mean_Steps_day <- aggregate(steps ~ date, activity, mean, na.rm = TRUE)
+plot(mean_Steps_day, col = "green", ylab = "steps", main = "mean steps per day")
+median_Steps_day <- aggregate(steps ~ date, activity, median, na.rm = TRUE)
+plot(median_Steps_day, col = "green", ylab = "steps", main = "median of steps per day")
+```
 
 ## What is the average daily activity pattern?
 
+step 1 : grouping per interval across days
+step 2 : plot, where interval is set to hours for easy interpretation
+
+```{r daily_act, echo=TRUE}
+mean_Steps_interval <- aggregate(. ~ interval, activity, mean)
+
+plot(mean_Steps_interval$interval/60,mean_Steps_interval$steps, ylab = "steps", xlab = "hour of the day", main = "average steps per 5min interval through the day" )
+```
 
 
 ## Imputing missing values
 
+When one value is missing I, I replace with the average day profile calculated in the above section *mean_Steps_interval* for the same interval.
 
+step 1 : copy the dataset to impute
+step 2 : check which values need imputing
+step 3 : for these, replace with the value of *mean_Steps_interval*
+```{r, echo=TRUE}
+activity_imputed <- activity
+na_index <- which(is.na(activity_imputed$steps))
+activity_imputed$steps[na_index] <- 
+  mean_Steps_interval$steps[match(activity_imputed$interval[na_index], 
+                                        mean_Steps_interval$interval)]
+
+
+  summary(activity_imputed)
+```
+Before imputing we had 2304, after imputing we have no NA's are present as expected
+
+Impact of imputing is quantified with a scatter plot of the average per interval, pre and post imputing
+```{r, echo=TRUE}
+mean_Steps_interval_imputed <- aggregate(. ~ interval, activity_imputed, mean)
+
+plot(mean_Steps_interval_imputed$steps , mean_Steps_interval$steps, ylab = "original", xlab = "imputed", main = "steps - impact imputing" )
+
+```
+No deviations from the middle line, seem to suggest imputing did not affect the aggregated.
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+step 1 : create a reference list
+step 2 : create factors when the day is  or is not in the list
+I had to google the split weekday/weekend day after quite some struggling. This post from stackoverflow hed the key : (https://stackoverflow.com/questions/28893193/creating-factor-variables-weekend-and-weekday-from-date)
+
+```{r, echo=TRUE}
+weekdays1 <- c('maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag')
+activity$wDay <- factor((weekdays(activity$date) %in% weekdays1), levels=c(FALSE, TRUE), labels=c('weekend', 'weekday')) 
+```
+
+
+step 3 : create two plots for each of the factor levels
+```{r}
+par(mfrow=c(1,2), mar = c(4,4,2,1))  #organises plots wrt each others
+with(subset(activity, wDay == "weekday"), plot(interval/60, steps, main = "weekday", xlab = "interval (h)"))
+with(subset(activity, wDay == "weekend"), plot(interval/60, steps, main = "weekend", xlab = "interval (h)"))
+
+```
+
+It shows the weekends have less steps and the step peak is later.
